@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-blog
+  labels:
+    app: flask-blog
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: flask-blog
+  template:
+    metadata:
+      labels:
+        app: flask-blog
+    spec:
+      containers:
+      - name: flask-blog
+        image: sowjanya2510/flask-blog-k8s:latest
+        ports:
+        - containerPort: 5001
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "128Mi"
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
