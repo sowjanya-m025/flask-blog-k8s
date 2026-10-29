@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distributed FLask Blog using Kubernetes</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #0a0c10;
+  --surface: #111419;
+  --card:    #161b22;
+  --border:  #21262d;
+  --accent:  #00d9ff;
+  --green:   #3fb950;
+  --red:     #f85149;
+  --yellow:  #d29922;
+  --text:    #e6edf3;
+  --muted:   #8b949e;
+  --alpha:   #00d9ff;
+  --beta:    #7c6af7;
+  --gamma:   #f97316;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+}
+
+/* ── Nav ───────────────────────────────────────────────────── */
+nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky; top: 0; z-index: 100;
+}
+nav .logo { font-size: 1rem; font-family: 'JetBrains Mono', monospace; color: var(--accent); font-weight: 700; letter-spacing: -0.02em; }
+nav .badge { font-size: .7rem; background: #00d9ff18; border: 1px solid var(--accent); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-family: 'JetBrains Mono', monospace; }
+
+/* ── Layout ────────────────────────────────────────────────── */
+.wrapper { max-width: 1200px; margin: 0 auto; padding: 36px 24px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media(max-width:860px){ .grid-2 { grid-template-columns: 1fr; } }
+
+/* ── Section labels ────────────────────────────────────────── */
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 12px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; }
+
+/* ── Pod boxes ─────────────────────────────────────────────── */
+.pods-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+@media(max-width:700px){ .pods-grid { grid-template-columns: 1fr; } }
+
+.pod-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  position: relative;
+  transition: border-color .3s, box-shadow .3s;
+}
+.pod-card.selected {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green), 0 0 20px #3fb95025;
+}
+.pod-card.overloaded { border-color: var(--red); }
+
+.pod-card[data-pod="pod-alpha"] { --pod-color: var(--alpha); }
+.pod-card[data-pod="pod-beta"]  { --pod-color: var(--beta);  }
+.pod-card[data-pod="pod-gamma"] { --pod-color: var(--gamma); }
+
+.pod-name {
+  font-size: .82rem; font-weight: 700;
+  color: var(--pod-color);
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.pod-name .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pod-color); flex-shrink: 0; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.metric-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: .75rem; }
+.metric-label { color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+.metric-val   { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+.bar-track { background: #ffffff0a; border-radius: 4px; height: 5px; margin-bottom: 10px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 4px; background: var(--pod-color); transition: width .6s ease; }
+
+.score-chip {
+  display: inline-block; margin-top: 8px;
+  background: #ffffff08; border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 9px;
+  font-size: .7rem; font-family: 'JetBrains Mono', monospace; color: var(--muted);
+}
+.score-chip span { color: var(--pod-color); font-weight: 700; }
+
+.blog-count {
+  position: absolute; top: 14px; right: 14px;
+  font-size: .65rem; font-family: 'JetBrains Mono', monospace;
+  color: var(--muted); background: #ffffff06; padding: 3px 7px; border-radius: 6px;
+}
+
+.selected-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 10px; font-size: .68rem;
+  background: #3fb95018; color: var(--green);
+  border: 1px solid #3fb95040; border-radius: 6px; padding: 3px 9px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.sim-btn {
+  display: block; width: 100%; margin-top: 12px;
+  background: #f8514918; border: 1px solid #f8514940; color: var(--red);
+  border-radius: 7px; padding: 7px; font-size: .7rem; font-family: 'JetBrains Mono', monospace;
+  cursor: pointer; transition: background .2s;
+}
+.sim-btn:hover { background: #f8514930; }
+
+/* ── Decision banner ───────────────────────────────────────── */
+.decision-banner {
+  background: #3fb95010;
+  border: 1px solid #3fb95040;
+  border-radius: 12px; padding: 22px; margin-bottom: 24px;
+  animation: slideIn .4s ease;
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+
+.decision-banner h2 { color: var(--green); margin-bottom: 14px; }
+.decision-row { font-size: .82rem; margin-bottom: 6px; color: var(--muted); }
+.decision-row strong { color: var(--text); }
+
+.rejected-list { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.rejected-pill {
+  font-size: .7rem; font-family: 'JetBrains Mono', monospace;
+  background: #f8514912; border: 1px solid #f8514935;
+  color: var(--red); border-radius: 6px; padding: 4px 10px;
+}
+
+/* ── Form ──────────────────────────────────────────────────── */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: .75rem; color: var(--muted); margin-bottom: 7px; font-family: 'JetBrains Mono', monospace; }
+.form-group input, .form-group textarea {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: 'Syne', sans-serif;
+  font-size: .88rem; padding: 12px 14px;
+  transition: border-color .2s;
+}
+.form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+.form-group textarea { min-height: 120px; resize: vertical; }
+
+.target-hint {
+  font-size: .73rem; color: var(--muted); margin-bottom: 14px;
+  background: #00d9ff0c; border: 1px solid #00d9ff25;
+  border-radius: 7px; padding: 9px 13px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.target-hint span { color: var(--accent); font-weight: 600; }
+
+.submit-btn {
+  background: var(--accent); color: #000; font-weight: 700;
+  border: none; border-radius: 8px; padding: 13px 26px;
+  font-family: 'Syne', sans-serif; font-size: .9rem; cursor: pointer;
+  transition: opacity .2s;
+}
+.submit-btn:hover { opacity: .88; }
+
+/* ── Blog feed ─────────────────────────────────────────────── */
+.blog-item {
+  border-left: 3px solid var(--border);
+  padding: 14px 16px; margin-bottom: 14px;
+  background: var(--surface); border-radius: 0 8px 8px 0;
+  transition: border-color .2s;
+}
+.blog-item:hover { border-color: var(--accent); }
+.blog-item h3 { font-size: .92rem; margin-bottom: 6px; }
+.blog-item p  { font-size: .82rem; color: var(--muted); line-height: 1.55; margin-bottom: 10px; }
+.blog-meta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.blog-pod  { font-size: .68rem; font-family: 'JetBrains Mono', monospace; }
+.blog-pod[data-pod="pod-alpha"] { color: var(--alpha); }
+.blog-pod[data-pod="pod-beta"]  { color: var(--beta);  }
+.blog-pod[data-pod="pod-gamma"] { color: var(--gamma); }
+.blog-time { font-size: .65rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+.empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 28px 0; }
+
+/* ── Live badge ────────────────────────────────────────────── */
+.live-dot { display: inline-block; width: 6px; height: 6px; background: var(--green); border-radius: 50%; margin-right: 6px; animation: pulse 1.5s infinite; }
+
+/* ── Hostname bar ──────────────────────────────────────────── */
+.host-bar {
+  font-family: 'JetBrains Mono', monospace; font-size: .72rem;
+  color: var(--muted); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 16px; margin-bottom: 28px;
+  display: flex; align-items: center; gap: 10px;
+}
+.host-bar .label { color: var(--muted); }
+.host-bar .val   { color: var(--accent); }
+
+/* ── Refresh indicator ─────────────────────────────────────── */
+#refresh-flash {
+  position: fixed; bottom: 20px; right: 20px;
+  background: #00d9ff18; border: 1px solid var(--accent);
+  color: var(--accent); font-family: 'JetBrains Mono', monospace;
+  font-size: .7rem; padding: 7px 14px; border-radius: 8px;
+  opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">⎈ k8s-blog / load-balancer-demo</span>
+  <span class="badge"><span class="live-dot"></span>LIVE METRICS</span>
+</nav>
+
+<div class="wrapper">
+
+  <!-- Hostname -->
+  <div class="host-bar">
+    <span class="label">SERVING_POD ▸</span>
+    <span class="val">{{ current_real_pod }}</span>
+    <span class="label" style="margin-left:auto">metrics auto-refresh every 3s</span>
+  </div>
+
+  <!-- Decision banner -->
+  {% if decision %}
+  <div class="decision-banner">
+    <h2>⚡ Load Balancer Decision</h2>
+    <div class="decision-row">Selected: <strong>{{ decision.selected }}</strong></div>
+    <div class="decision-row">Score: <strong>{{ decision.score }}</strong> &nbsp;(CPU×0.6 + MEM×0.4 — lower is better)</div>
+    <div class="decision-row">CPU at selection: <strong>{{ decision.cpu }}m</strong> &nbsp;|&nbsp; Memory: <strong>{{ decision.memory }} Mi</strong></div>
+    {% if decision.rejected %}
+    <div style="margin-top:12px;font-size:.75rem;color:var(--muted);">Rejected pods:</div>
+    <div class="rejected-list">
+      {% for r in decision.rejected %}
+      <span class="rejected-pill">✕ {{ r.label }} — score {{ r.score }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Pod metrics -->
+  <div class="card">
+    <div class="section-label">Cluster Pod Status</div>
+    <div class="pods-grid" id="pods-grid">
+      {% for pod in pods %}
+      <div class="pod-card {% if pod.id == best_pod.id %}selected{% endif %} {% if pod.cpu > 70 %}overloaded{% endif %}" data-pod="{{ pod.id }}" id="pc-{{ pod.id }}">
+
+        <div class="blog-count">{{ pod.blogs | length }} blog(s)</div>
+
+        <div class="pod-name">
+          <span class="dot"></span>
+          {{ pod.label }}
+        </div>
+
+        <!-- CPU -->
+        <div class="metric-row">
+          <span class="metric-label">CPU</span>
+          <span class="metric-val" id="cpu-{{ pod.id }}">{{ pod.cpu }}m</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" id="cpu-bar-{{ pod.id }}" style="width:{{ [pod.cpu, 100] | min }}%"></div>
+        </div>
+
+        <!-- Memory -->
+        <div class="metric-row">
+          <span class="metric-label">MEM</span>
+          <span class="metric-val" id="mem-{{ pod.id }}">{{ pod.memory }} Mi</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" id="mem-bar-{{ pod.id }}" style="width:{{ [(pod.memory / 200 * 100)|int, 100] | min }}%"></div>
+        </div>
+
+        <div class="score-chip">score: <span id="score-{{ pod.id }}">{{ pod.score }}</span></div>
+
+        {% if pod.id == best_pod.id %}
+        <div class="selected-tag">✓ SELECTED BY LB</div>
+        {% endif %}
+
+        <!-- Simulate load button -->
+        <button class="sim-btn" onclick="simulateLoad('{{ pod.id }}')">⚡ Spike CPU/MEM load</button>
+
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Publish form -->
+    <div>
+      <div class="card">
+        <div class="section-label">Publish a Blog Post</div>
+        <div class="target-hint">
+          Target pod: <span id="target-pod">{{ best_pod.label }}</span>
+          &nbsp;(score <span id="target-score">{{ best_pod.score }}</span>)
+        </div>
+        <form method="POST">
+          <div class="form-group">
+            <label>TITLE</label>
+            <input type="text" name="title" placeholder="Enter blog title…" required>
+          </div>
+          <div class="form-group">
+            <label>CONTENT</label>
+            <textarea name="content" placeholder="Write your blog content…" required></textarea>
+          </div>
+          <button type="submit" class="submit-btn">Publish</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Blog feed -->
+    <div>
+      <div class="card" style="max-height:520px;overflow-y:auto">
+        <div class="section-label">Published Blogs Feed</div>
+        {% if all_blogs %}
+          {% for blog in all_blogs %}
+          <div class="blog-item">
+            <h3>{{ blog.title }}</h3>
+            <p>{{ blog.content }}</p>
+            <div class="blog-meta">
+              <span class="blog-pod" data-pod="{{ blog.pod_id }}">◎ {{ blog.processed_by }}</span>
+              <span class="blog-time">@ {{ blog.timestamp }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">No blogs yet. Publish one! 👆</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Refresh flash -->
+<div id="refresh-flash">↻ metrics updated</div>
+
+<script>
+// ── Live metric polling ───────────────────────────────────────────────────────
+const podIds = ["pod-alpha", "pod-beta", "pod-gamma"];
+
+async function refreshMetrics() {
+  try {
+    const res  = await fetch("/api/metrics");
+    const data = await res.json();
+
+    data.pods.forEach(pod => {
+      const id = pod.id;
+
+      // Update numbers
+      const cpuEl   = document.getElementById(`cpu-${id}`);
+      const memEl   = document.getElementById(`mem-${id}`);
+      const scoreEl = document.getElementById(`score-${id}`);
+      if (cpuEl)   cpuEl.textContent   = pod.cpu + "m";
+      if (memEl)   memEl.textContent   = pod.memory + " Mi";
+      if (scoreEl) scoreEl.textContent = pod.score;
+
+      // Update bars
+      const cpuBar = document.getElementById(`cpu-bar-${id}`);
+      const memBar = document.getElementById(`mem-bar-${id}`);
+      if (cpuBar) cpuBar.style.width = Math.min(pod.cpu, 100) + "%";
+      if (memBar) memBar.style.width = Math.min(pod.memory / 200 * 100, 100) + "%";
+
+      // Update card border
+      const card = document.getElementById(`pc-${id}`);
+      if (card) {
+        card.classList.toggle("selected",   id === data.best_id);
+        card.classList.toggle("overloaded", pod.cpu > 70);
+      }
+    });
+
+    // Update form target hint
+    const best = data.pods.find(p => p.id === data.best_id);
+    if (best) {
+      const t = document.getElementById("target-pod");
+      const s = document.getElementById("target-score");
+      if (t) t.textContent = best.label;
+      if (s) s.textContent = best.score;
+    }
+
+    flashRefresh();
+  } catch(e) { console.warn("metrics fetch failed", e); }
+}
+
+function flashRefresh() {
+  const el = document.getElementById("refresh-flash");
+  el.style.opacity = "1";
+  setTimeout(() => el.style.opacity = "0", 900);
+}
+
+setInterval(refreshMetrics, 3000);
+
+// ── Simulate load ─────────────────────────────────────────────────────────────
+async function simulateLoad(podId) {
+  await fetch(`/api/simulate-load/${podId}`, { method: "POST" });
+  setTimeout(refreshMetrics, 400);
+}
+</script>
+
+</body>
+</html>
